@@ -1,0 +1,566 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+  
+  
+  #### Importing the Nhanes dataset
+  
+  ```{r,echo=FALSE,warning=FALSE,message=FALSE}
+library(readr)
+#library(kableExtra)
+CFQ_F<- read_csv("CFQ_F.csv")
+#View(CFQ_F)
+library(Hmisc)
+library(SASxport)
+#kable(head(CFQ_F))
+library(moments)
+library(ggpubr)
+library(ggplot2)
+library(emmeans)
+library(alr4)
+#library(dplyr)
+#library(tidyverse)
+library(lme4)
+library(plotly)
+```
+
+
+#### Selecting and renaming the columns of the dataset
+
+```{r,warning=FALSE}
+library(data.table)
+to.keep=c("CFASTAT","CFDCCS","CFDCST1","CFDCST2","CFDCST3","CFDCSR","CFDCIT1","CFDCIT2","CFDCIT3","CFDCIR","CFDAST","CFDDS")
+nhanesdata<-data.frame(CFQ_F[,to.keep])
+
+
+nhanesgender<-read.xport("DEMO_H.XPT")
+df<-lapply(nhanesgender,unclass)
+df<-df[c("RIDAGEYR","RIAGENDR","RIDRETH1","WTMEC2YR")]
+data=data.frame(cbind(df$RIDAGEYR,df$RIAGENDR,df$RIDRETH1,df$WTMEC2YR))
+
+```
+
+```{r}
+colnames(data)<-c("Age","Gender","Race")
+data=data[-3473:-10175,]
+nhanestable=cbind(nhanesdata,data)
+nhanesdata=data.frame(nhanestable)
+
+```
+
+
+```{r}
+colnames(nhanesdata)=letters[1:16]
+setnames(nhanesdata,old=c("a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p"),
+         new=c("CogFunc","CeradStatus","CeradTrial1","CeradTrial2","CeradTrial3","CeradDelayed","CeradIntTrial1","CeradIntTrial2","CeradIntTrial3","CeradIntRecall","AnimalFluenceScore","DigitalSymbolScore","Age","Gender","Race","SampleWeights"))
+summary(nhanesdata)
+#View(nhanesdata)
+
+```
+
+#### Cleaning and assigning values to the data
+
+The idea is the two separate kind of analysis :
+  - First factor the variables in different levels
+- (1) Remove all the NA values from the data
+- (2) Impute either Mean/Mode with the NA values in the data
+
+```{r}
+nhanesdata$CogFunc<-factor(nhanesdata$CogFunc, labels = c("Mild-Impairment", "Impairment","Impairment","Impairment","Impairment","Impairment"))
+nhanesdata$CogFunc<-ifelse(nhanesdata$CogFunc=="Impairment",1,0)
+nhanesdata$Gender<-factor(nhanesdata$Gender,labels=c("Male","Female"))
+nhanesdata$Race<-factor(nhanesdata$Race,labels=c("Hispanic","Hispanic","White","Black","Other"))
+#View(nhanesdata)
+
+```
+
+#### Replacing NA values from the dataset
+
+```{r}
+nhanesdata[is.na(nhanesdata)]<-0
+
+```
+#### Replacing NA values with mean values of each predictors
+
+```{r}
+nhanesdata$CeradTrial1[is.na(nhanesdata$CeradTrial1)]<-mean(nhanesdata$CeradTrial1,na.rm=TRUE)
+nhanesdata$CeradTrial2[is.na(nhanesdata$CeradTrial2)]<-mean(nhanesdata$CeradTrial2,na.rm=TRUE)
+nhanesdata$CeradTrial3[is.na(nhanesdata$CeradTrial3)]<-mean(nhanesdata$CeradTrial3,na.rm=TRUE)
+nhanesdata$CeradDelayed[is.na(nhanesdata$CeradDelayed)]<-mean(nhanesdata$CeradDelayed,na.rm=TRUE)
+nhanesdata$CeradIntTrial1[is.na(nhanesdata$CeradIntTrial1)]<-mean(nhanesdata$CeradIntTrial1,na.rm=TRUE)
+nhanesdata$CeradIntTrial2[is.na(nhanesdata$CeradIntTrial2)]<-mean(nhanesdata$CeradIntTrial2,na.rm=TRUE)
+nhanesdata$CeradIntTrial3[is.na(nhanesdata$CeradIntTrial3)]<-mean(nhanesdata$CeradIntTrial3,na.rm=TRUE)
+nhanesdata$AnimalFluenceScore[is.na(nhanesdata$AnimalFluenceScore)]<-mean(nhanesdata$AnimalFluenceScore,na.rm=TRUE)
+nhanesdata$DigitalSymbolScore[is.na(nhanesdata$DigitalSymbolScore)]<-mean(nhanesdata$DigitalSymbolScore,na.rm=TRUE)
+nhanesdata$Age[is.na(nhanesdata$Age)]<-mean(nhanesdata$Age,na.rm=TRUE)
+
+```
+
+
+#### Descriptive Statistics
+
+```{r,warning=FALSE}
+scatterplotMatrix(~CeradTrial1+CeradTrial2+CeradTrial3+AnimalFluenceScore+DigitalSymbolScore|Gender,smooth=TRUE,reg.line=FALSE,spread=FALSE,data=nhanesdata)
+
+nhanesdata %>% group_by(Gender,Race) %>% summarise(Avg_CeradTrial1Score=mean(CeradTrial1,na.rm=TRUE),Avg_CeradTrial2Score=mean(CeradTrial2,na.rm=TRUE),
+                                                   Avg_CeradTrial3Score=mean(CeradTrial3,na.rm=TRUE),
+                                                   Avg_AnimalFluenceScore=mean(AnimalFluenceScore,na.rm=TRUE),
+                                                   Avg_DigitalSymbolScore=mean(DigitalSymbolScore,na.rm=TRUE),
+                                                   Observations=n())
+nhanesdata %>% group_by(Gender,Race) %>% summarise(Avg_CeradTrial2Score=mean(CeradTrial2,na.rm=TRUE),Observations=n())
+nhanesdata %>% group_by(Gender,Race) %>% summarise(Avg_CeradTrial3Score=mean(CeradTrial3,na.rm=TRUE),Observations=n())
+nhanesdata %>% group_by(Gender,Race) %>% summarise(Avg_AnimalFluenceScore=mean(AnimalFluenceScore,na.rm=TRUE),Observations=n())
+nhanesdata %>% group_by(Gender,Race) %>% summarise(Avg_DigitalSymbolScore=mean(DigitalSymbolScore,na.rm=TRUE),Observations=n())
+```
+
+```{r}
+
+mean(nhanesdata$CeradTrial1)
+mean(nhanesdata$CeradTrial2)
+mean(nhanesdata$CeradTrial3)
+mean(nhanesdata$CeradTrial2)
+mean(nhanesdata$CeradDelayed)
+mean(nhanesdata$CeradIntTrial1)
+mean(nhanesdata$CeradIntTrial2)
+mean(nhanesdata$CeradIntTrial3)
+mean(nhanesdata$AnimalFluenceScore)
+mean(nhanesdata$DigitalSymbolScore)
+mean(nhanesdata$Age)
+
+
+sd(nhanesdata$CeradTrial1)
+sd(nhanesdata$CeradTrial2)
+sd(nhanesdata$CeradTrial3)
+sd(nhanesdata$CeradTrial2)
+sd(nhanesdata$CeradDelayed)
+sd(nhanesdata$CeradIntTrial1)
+sd(nhanesdata$CeradIntTrial2)
+sd(nhanesdata$CeradIntTrial3)
+sd(nhanesdata$AnimalFluenceScore)
+sd(nhanesdata$DigitalSymbolScore)
+sd(nhanesdata$Age)
+
+skewness(nhanesdata$CeradTrial1)
+skewness(nhanesdata$CeradTrial2)
+skewness(nhanesdata$CeradTrial3)
+skewness(nhanesdata$CeradTrial2)
+skewness(nhanesdata$CeradDelayed)
+skewness(nhanesdata$CeradIntTrial1)
+skewness(nhanesdata$CeradIntTrial2)
+skewness(nhanesdata$CeradIntTrial3)
+skewness(nhanesdata$AnimalFluenceScore)
+skewness(nhanesdata$DigitalSymbolScore)
+skewness(nhanesdata$Age)
+
+
+kurtosis(nhanesdata$CeradTrial1)
+kurtosis(nhanesdata$CeradTrial2)
+kurtosis(nhanesdata$CeradTrial3)
+kurtosis(nhanesdata$CeradTrial2)
+kurtosis(nhanesdata$CeradDelayed)
+kurtosis(nhanesdata$CeradIntTrial1)
+kurtosis(nhanesdata$CeradIntTrial2)
+kurtosis(nhanesdata$CeradIntTrial3)
+kurtosis(nhanesdata$AnimalFluenceScore)
+kurtosis(nhanesdata$DigitalSymbolScore)
+kurtosis(nhanesdata$Age)
+
+```
+
+
+#### Measuring Correlations
+
+```{r}
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradTrial1,nhanesdata$Age,method = "pearson")
+
+
+```
+
+```{r}
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradTrial2,nhanesdata$Age,method = "pearson")
+```
+
+```{r}
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradTrial3,nhanesdata$Age,method = "pearson")
+```
+
+
+```{r}
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradDelayed,nhanesdata$Age,method = "pearson")
+
+```
+
+
+```{r}
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial1,nhanesdata$Age,method = "pearson")
+```
+
+
+```{r}
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial2,nhanesdata$Age,method = "pearson")
+```
+
+
+```{r}
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$CeradIntTrial3,nhanesdata$Age,method = "pearson")
+```
+
+
+```{r}
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$AnimalFluenceScore,nhanesdata$Age,method = "pearson")
+```
+
+
+```{r}
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradTrial2,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradTrial3,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradDelayed,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradIntTrial1,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradIntTrial2,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$CeradIntTrial3,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$AnimalFluenceScore,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$DigitalSymbolScore,method = "pearson")
+cor(nhanesdata$DigitalSymbolScore,nhanesdata$Age,method = "pearson")
+
+```
+
+n
+
+
+
+```{r}
+train<-nhanesdata[1:2778,]
+test<-nhanesdata[2779:3472,]
+```
+
+
+#### Modeling Logistic Regressions
+
+```{r}
+modeltrain1<-glm(CogFunc~CeradTrial1+CeradTrial2+CeradTrial3+Gender+Race+Age-1,family = binomial,data=train)
+#modeltest1<-glm(CogFunc~CeradTrial1+CeradTrial2+CeradTrial3+Gender+Race+Age-1,weights=(SampleWeights/2),family = binomial(link='logit'),data=test)
+summary(modeltrain1)
+summary(modeltest1)
+exp(coef(modeltrain1))
+#summary(modeltest1)
+```
+
+
+Discussion/ Output Interpretation:
+  
+  - Cerad Trail1 shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Cerad Trial1. By looking at the odds ratio, we can tell that Cerad Trial1 scores has 0.69 times the chance of predicting that an individual is cognitively impaired.
+
+- Cerad Trail2 shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Cerad Trial2. By looking at the odds ratio, we can tell that Cerad Trial2 scores has 0.85 times the chance of predicting that an individual is cognitively impaired.
+
+-Cerad Trail3 shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Cerad Trial3. By looking at the odds ratio, we can tell that Cerad Trial1 scores has 0.58 times the chance of predicting that an individual is cognitively impaired.
+
+- Gender:Male shows clear evidence of being postiively associated with cognitive functioning with lower chance of being cognitively impaired as compared as compared to Female. By looking at the odds ratio, we can tell that Male has 6.85 times the chance of predicting being cognitively impaired.
+
+- Gender:Female shows clear evidence of being postiively associated with cognitive functioning with higher chance of being cognitively impaired as compared as compared to Male. By looking at the odds ratio, we can tell that Female has 9.61 times the chance of predicting being cognitively impaired.
+
+
+
+
+
+```{r}
+modeltrain2<-glm(CogFunc~AnimalFluenceScore+Gender+Race+Age-1,family = binomial(link='logit'),data=train)
+modeltest2<-glm(CogFunc~AnimalFluenceScore+Gender+Race-1,family = binomial(link='logit'),data=test)
+summary(modeltrain2)
+summary(modeltest2)
+exp(coef(modeltrain2))
+```
+
+
+Discussion/ Output Interpretation:
+  
+  - Animal Fluence Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Animal Fluence Score. By looking at the odds ratio, we can tell that Animal Fluence Score scores has 0.63 times the chance of predicting that an individual is cognitively impaired.
+
+- Gender:Male shows clear evidence of being postiively associated with cognitive functioning with lower chance of being cognitively impaired as compared as compared to Female. By looking at the odds ratio, we can tell that Male has 6.78 times the chance of predicting being cognitively impaired.
+
+- Gender:Female shows clear evidence of being postiively associated with cognitive functioning with higher chance of being cognitively impaired as compared as compared to Male. By looking at the odds ratio, we can tell that Female has 8.94 times the chance of predicting being cognitively impaired.
+
+
+
+```{r}
+modeltest<-glm(CogFunc~AnimalFluenceScore+CeradTrial1+CeradTrial2+CeradTrial3+DigitalSymbolScore+Gender+Race-1,family = binomial(link='logit'),data=train)
+summary(modeltest)
+exp(coef(modeltest))
+```
+
+```{r}
+bigmodel<-glm(CogFunc~AnimalFluenceScore+CeradTrial1+CeradTrial2+CeradTrial3+DigitalSymbolScore+Age*Gender+Race*Age+Gender*Race-1,family = binomial(link='logit'),data=train)
+summary(bigmodel)
+```
+
+
+
+```{r}
+modeltrain3<-glm(CogFunc~DigitalSymbolScore+Gender+Race+Age-1,family = binomial(link='logit'),data=train)
+modeltest3<-glm(CogFunc~DigitalSymbolScore+Gender+Race+Age-1,family = binomial(link='logit'),data=test)
+summary(modeltrain3)
+summary(modeltest3)
+exp(coef(modeltrain3))
+```
+
+Discussion/ Output Interpretation:
+  
+  - Digital Symbol Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Digital Symbol Score. By looking at the odds ratio, we can tell that Digital Symbol Score scores has 0.89 times the chance of predicting that an individual is cognitively impaired.
+
+- Gender:Male shows clear evidence of being postiively associated with cognitive functioning with lower chance of being cognitively impaired as compared as compared to Female. By looking at the odds ratio, we can tell that Male has 1.85 times the chance of predicting being cognitively impaired.
+
+- Gender:Female shows clear evidence of being postiively associated with cognitive functioning with higher chance of being cognitively impaired as compared as compared to Male. By looking at the odds ratio, we can tell that Female has 2.01 times the chance of predicting being cognitively impaired.
+
+
+## Including Plots
+
+```{r}
+
+g3 <- ggplot(nhanesdata, aes(Race, CeradTrial3))
+g3 + geom_boxplot(aes(fill=factor(Gender))) + 
+  theme(axis.text.x = element_text(angle=0, vjust=1)) + 
+  labs(title="Box plot", 
+       subtitle="Boxplot of Cerad Trial3 Score grouped by Race and gender",
+       x="Race",
+       y="Cerad Trial3 Score")
+
+g4 <- ggplot(nhanesdata, aes(Race, AnimalFluenceScore))
+g4 + geom_boxplot(aes(fill=factor(Gender))) + 
+  theme(axis.text.x = element_text(angle=0, vjust=1)) + 
+  labs(title="Box plot", 
+       subtitle="Boxplot of Animal Fluence Score grouped by Race and Gender",
+       x="Race",
+       y="Animal Fluence Score")
+
+g5 <- ggplot(nhanesdata, aes(Race, DigitalSymbolScore))
+g5 + geom_boxplot(aes(fill=factor(Gender))) + 
+  theme(axis.text.x = element_text(angle=0, vjust=1)) + 
+  labs(title="Box plot", 
+       subtitle="Boxplot of Digital Symbol Score grouped by Race and Gender",
+       x="Race",
+       y="Digital Symbol Test Score")
+
+
+```
+
+
+#### Model testing and goodness of fit
+
+```{r}
+residualPlots(modeltrain1,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+residualPlots(modeltest1,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+residualPlots(modeltrain2,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+residualPlots(modeltest2,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+residualPlots(modeltrain3,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+residualPlots(modeltest3,terms=~.,smooth=list(smoother=loessLine),quadratic=FALSE)
+
+
+```
+
+
+#### Model Diagnostics
+
+```{r,warning=FALSE,message=FALSE}
+library(ResourceSelection)
+modeltest1<-glm(CogFunc ~ AnimalFluenceScore + CeradTrial3 + DigitalSymbolScore +Gender - 1,family=binomial(link="logit"),data=train)
+summary(modeltest1)
+exp(coef(modeltest1))
+modeltest2<-glm(CogFunc ~ AnimalFluenceScore + CeradTrial1 + CeradTrial2 + CeradTrial3 + DigitalSymbolScore + Gender + Race - 1, family =binomial(link = "logit"),data = train)
+summary(modeltest2)
+anova(modeltest1,modeltest2,test="LRT")
+hoslem.test(train$CogFunc,fitted(modeltest1),g=5)
+influenceIndexPlot(modeltest1)
+dfbetasPlots(modeltest1)
+influencePlot(modeltest1,id.n=8)
+outlierTest(modeltest1)
+```
+
+
+Discussion/ Output Interpretation:
+  
+  - Cerad Trail3 shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Cerad Trial3. By looking at the odds ratio, we can tell that Cerad Trial3 scores has 0.65 times the chance of predicting that an individual is cognitively impaired.
+
+- Animal Fluence Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Animal Fluence Score. By looking at the odds ratio, we can tell that Animal Fluence Score scores has 0.77 times the chance of predicting that an individual is cognitively impaired.
+
+- Digital Symbol Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Digital Symbol Score. By looking at the odds ratio, we can tell that Cerad Trial3 scores has 0.96 times the chance of predicting that an individual is cognitively impaired.
+
+
+- Gender:Male shows clear evidence of being postiively associated with cognitive functioning with lower chance of being cognitively impaired as compared as compared to Female. By looking at the odds ratio, we can tell that Male has 22.53 times the chance of predicting being cognitively impaired.
+
+- Gender:Female shows clear evidence of being postiively associated with cognitive functioning with higher chance of being cognitively impaired as compared as compared to Male. By looking at the odds ratio, we can tell that Female has 39.66 times the chance of predicting being cognitively impaired.
+
+
+Discussion of choosing between modeltest1 & modeltest2:
+  
+  - ANOVA test has been implemented to compare models that consists of all the test scores in the study versus test scores that have evidence to explain the variation of each individual's cognitive functioning. The large p-value (p=0.79) indicates that there is enough evidence that model consisting only Cerad Trial3, Animal Fluence Score, Digital Symbol Score and Gender helps explain the variation in each individual's cognitive functioning ability and their effects on cognitive functioning ability are statistically significant.
+
+Discussion on Model Diagnostics:
+  
+  - Influence plots, dfbetasplots, cooks distance were implemented to identify whether the data had any potential outliers that would influence the model estimates. Results showed that row-382 had very high unusual cook's distance and Bonferonni test result proved it to be an outlier. An analysis was done after removing the outlier from the data and model estimates showed no significant difference.
+
+
+
+```{r,message=FALSE, warning=FALSE}
+resids2<-resid(modeltest1)
+fittedvals2<-fitted(modeltest1)
+mydataframe2<-data.frame(nhanesdata1,resids2,fittedvals2)
+ResidualPlot<- ggplot(data = nhanesdata1, aes(x = fittedvals2, y = resids2),main="Residual Plot")
+ResidualPlot + geom_point(aes(colour=Gender),size = 1.5) + geom_smooth(se=TRUE,span=.75) +geom_hline(yintercept=0) +scale_colour_hue("Gender",breaks=c("Male","Female"))+xlab("Predicted Value") + ylab("Residuals")
+
+```
+
+
+
+Discussion on the residual plot:
+
+- Residual plot shows no curvature relationship between the residual and the fitted values and hence it shows the model fits well with the data.
+
+The modeltest1 is the primitve model-> CogFunc~CeradTrial3+AnimalFluenceScore+DigitalSymbolScore+Gender
+
+```{r}
+summary(modeltest1)
+exp(coef(modeltest1))
+exp(confint(modeltest1))
+library(rms)
+dd<-datadist(nhanesdata)
+options(datadist = 'dd')
+rmsmodeltest1<-lrm(CogFunc~CeradTrial3+AnimalFluenceScore+DigitalSymbolScore+Gender,data=nhanesdata,x=TRUE,y=TRUE)
+print(rmsmodeltest1)
+
+```
+
+
+#### Graphical Displays
+
+```{r}
+plot(allEffects(modeltest1))
+plot(allEffects(modeltest1),"Gender")
+plot(Predict(rmsmodeltest1))
+summary(rmsmodeltest1,Gender=c("Male"))
+P1<-Predict(rmsmodeltest1,CeradTrial3=seq(0,6),Gender,conf.int = 0.95)
+plot(P1,~CeradTrial3|Gender)
+P2<-Predict(rmsmodeltest1,AnimalFluenceScore=seq(0,40),Gender,conf.int = 0.95)
+plot(P2,~AnimalFluenceScore|Gender)
+P3<-Predict(rmsmodeltest1,DigitalSymbolScore=seq(0,105),Gender,conf.int = 0.95)
+plot(P3,~DigitalSymbolScore|Gender)
+emmeans(bigmodel,pairwise~Race)
+emmeans(bigmodel,pairwise~Gender)
+emmeans(bigmodel,pairwise~Gender|Race)
+```
+
+Discussion of the plots:
+
+- From the gender effects plot, we can tell that Female tend to have higher probability of being cognitively impaired as compared to Male.
+- With respect to each neuropsychological tests, we can tell that Female tend to have higher probability of being cognitively impaired as compared to Male.
+
+
+```{r}
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(devtools)
+library(yarrr)
+
+plot_model(modeltest,type="pred",terms=c("Race","Gender"),main="Predicted Probability of Cognitive Function")
+
+```
+
+Discussion of the plot:
+
+- From the Sjplot, we can tell that Female tend to have higher probability of being cognitively impaired as compared to Male. There maybe some differences across each gender but the differences are not statistically significant.
+
+
+```{r}
+emmip(modeltest2,Gender~Race)
+
+
+```
+
+
+
+
+#### Conclusion
+
+Discussion:
+
+- Cerad Trail3 shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Cerad Trial3. By looking at the odds ratio, we can tell that Cerad Trial3 scores has 0.65 times the chance of predicting that an individual is cognitively impaired.
+
+- Animal Fluence Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Animal Fluence Score. By looking at the odds ratio, we can tell that Animal Fluence Score scores has 0.77 times the chance of predicting that an individual is cognitively impaired.
+
+- Digital Symbol Score shows clear evidence of being negative associated with cognitive functioning with less chance of being cognitively impaired as an individual scored more in Digital Symbol Score. By looking at the odds ratio, we can tell that Digital Symbol  scores has 0.96 times the chance of predicting that an individual is cognitively impaired.
+
+
+- Gender:Male shows clear evidence of being postiively associated with cognitive functioning with lower chance of being cognitively impaired as compared as compared to Female. By looking at the odds ratio, we can tell that Male has 22.53 times the chance of predicting being cognitively impaired.
+
+- Gender:Female shows clear evidence of being postiively associated with cognitive functioning with higher chance of being cognitively impaired as compared as compared to Male. By looking at the odds ratio, we can tell that Female has 39.66 times the chance of predicting being cognitively impaired.
+
+- There were differences in Cognitive Functioning across difference Race with White having the lowest chances of being cognitively impaired, Hispanic and Black having the highest chance of being cognitively impaired. However, there were no evidence the differences in Cognitive Functioning across different races and hence the Race effect was not statistically significant.
